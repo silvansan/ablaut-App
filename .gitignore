@@ -1,0 +1,16 @@
+# Local Flutter SDK checkout. Keep app code outside this directory.
+flutter/
+
+# Flutter/Dart generated files for future app work.
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+
+# Local editor and OS files.
+.idea/
+.vscode/
+*.iml
+Thumbs.db
+Desktop.ini
