@@ -8,6 +8,12 @@ flutter/
 .packages
 build/
 
+# Desktop/web platform folders are not part of the Android-first mobile scope yet.
+app/web/
+app/windows/
+app/linux/
+app/macos/
+
 # Local editor and OS files.
 .idea/
 .vscode/
