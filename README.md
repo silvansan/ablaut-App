@@ -17,6 +17,24 @@ From `UnderSound-Mobile/app`:
 ..\flutter\bin\flutter run
 ```
 
+## Release builds
+
+Android artifacts are built from `UnderSound-Mobile/app`:
+
+```powershell
+..\flutter\bin\flutter build apk --release
+..\flutter\bin\flutter build appbundle --release
+```
+
+The APK is for direct install / GitHub releases. The AAB is for Google Play.
+
+Release signing uses local files that must not be committed:
+
+- `app/android/upload-keystore.jks`
+- `app/android/key.properties`
+
+iOS release packaging requires macOS, Xcode, and an Apple Developer Program account.
+
 ## Next steps
 
 Current app status:
