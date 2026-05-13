@@ -42,6 +42,21 @@ class UnderSoundApiClient {
     return HlsStatus.fromJson(json, serverUrl);
   }
 
+  Future<HlsPlaylistInspection> inspectHlsPlaylist(Uri playlistUrl) async {
+    final response = await _get(
+      playlistUrl.replace(
+        queryParameters: {
+          ...playlistUrl.queryParameters,
+          '_undersound': DateTime.now().millisecondsSinceEpoch.toString(),
+        },
+      ),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException('HLS playlist returned ${response.statusCode}.');
+    }
+    return HlsPlaylistInspection.fromPlaylist(response.body);
+  }
+
   Future<http.Response> _get(Uri uri) {
     final client = _httpClient;
     return client == null ? http.get(uri) : client.get(uri);
@@ -60,6 +75,40 @@ class UnderSoundApiClient {
       throw const ApiException('Server response was not valid.');
     }
     return decoded;
+  }
+}
+
+class HlsPlaylistInspection {
+  const HlsPlaylistInspection({
+    required this.ended,
+    required this.lastProgramDateTime,
+  });
+
+  final bool ended;
+  final DateTime? lastProgramDateTime;
+
+  bool get stale {
+    final dateTime = lastProgramDateTime;
+    if (dateTime == null) {
+      return false;
+    }
+    return DateTime.now().toUtc().difference(dateTime.toUtc()) >
+        const Duration(seconds: 45);
+  }
+
+  factory HlsPlaylistInspection.fromPlaylist(String playlist) {
+    DateTime? lastProgramDateTime;
+    for (final line in const LineSplitter().convert(playlist)) {
+      if (line.startsWith('#EXT-X-PROGRAM-DATE-TIME:')) {
+        lastProgramDateTime = DateTime.tryParse(
+          line.substring('#EXT-X-PROGRAM-DATE-TIME:'.length).trim(),
+        );
+      }
+    }
+    return HlsPlaylistInspection(
+      ended: playlist.contains('#EXT-X-ENDLIST'),
+      lastProgramDateTime: lastProgramDateTime,
+    );
   }
 }
 

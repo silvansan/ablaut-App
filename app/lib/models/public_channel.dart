@@ -65,11 +65,13 @@ class HlsStatus {
     required this.active,
     required this.url,
     required this.status,
+    this.reason,
   });
 
   final bool active;
   final Uri? url;
   final String status;
+  final String? reason;
 
   factory HlsStatus.fromJson(Map<String, dynamic> json, Uri serverUrl) {
     final rawUrl = json['url']?.toString();
@@ -85,6 +87,7 @@ class HlsStatus {
       active: json['active'] == true,
       url: parsedUrl,
       status: json['status']?.toString() ?? 'stopped',
+      reason: json['reason']?.toString(),
     );
   }
 }

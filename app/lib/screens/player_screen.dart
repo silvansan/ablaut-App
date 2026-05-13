@@ -1,9 +1,12 @@
-import 'package:audio_session/audio_session.dart';
+import 'dart:async';
+import 'dart:developer' as developer;
+
 import 'package:flutter/material.dart';
-import 'package:just_audio/just_audio.dart';
 
 import '../models/listener_link.dart';
 import '../models/public_channel.dart';
+import '../services/android_power_service.dart';
+import '../services/undersound_audio_service.dart';
 import '../services/undersound_api_client.dart';
 
 class PlayerScreen extends StatefulWidget {
@@ -22,26 +25,38 @@ class PlayerScreen extends StatefulWidget {
 
 class _PlayerScreenState extends State<PlayerScreen> {
   final _api = const UnderSoundApiClient();
-  final _player = AudioPlayer();
+  final _powerService = const AndroidPowerService();
+  late final UnderSoundAudioHandler _audioHandler;
+  StreamSubscription<UnderSoundPlaybackSnapshot>? _snapshotSubscription;
   bool _loading = false;
   String _status = 'Ready';
   Uri? _streamUrl;
+  bool _playing = false;
+  bool _batteryOptimizationIgnored = true;
 
   @override
   void initState() {
     super.initState();
-    _configureAudio();
+    _audioHandler = UnderSoundAudioService.instance.handler;
+    _snapshotSubscription = _audioHandler.snapshots.listen((snapshot) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _status = snapshot.displayText;
+        _playing = snapshot.playing;
+      });
+    });
+    final snapshot = _audioHandler.snapshot;
+    _status = snapshot.displayText;
+    _playing = snapshot.playing;
+    _checkBatteryOptimization(showPrompt: true);
     _refreshHls();
-  }
-
-  Future<void> _configureAudio() async {
-    final session = await AudioSession.instance;
-    await session.configure(const AudioSessionConfiguration.music());
   }
 
   @override
   void dispose() {
-    _player.dispose();
+    _snapshotSubscription?.cancel();
     super.dispose();
   }
 
@@ -57,11 +72,34 @@ class _PlayerScreenState extends State<PlayerScreen> {
         channelId: widget.channelContext.channel.id,
         token: widget.link.token,
       );
+      developer.log(
+        'HLS status: active=${hls.active}, status=${hls.status}, url=${hls.url}.',
+        name: 'UnderSound.UI',
+      );
+      final url = hls.active ? hls.url : null;
+      String status = hls.reason ?? hls.status;
+      Uri? streamUrl = url;
+      if (url != null) {
+        final inspection = await _api.inspectHlsPlaylist(url);
+        if (inspection.ended || inspection.stale) {
+          streamUrl = null;
+          status =
+              'The HLS playlist has ended. Ask the speaker to restart publishing.';
+        }
+      }
+      if (!mounted) {
+        return;
+      }
       setState(() {
-        _streamUrl = hls.active ? hls.url : null;
-        _status = hls.active ? 'Stream is live' : 'Waiting for speaker';
+        _streamUrl = streamUrl;
+        _status = streamUrl != null
+            ? 'Stream is live'
+            : (status == 'stopped' ? 'Waiting for speaker' : status);
       });
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       setState(() => _status = error.toString());
     } finally {
       if (mounted) {
@@ -71,8 +109,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> _togglePlayback() async {
-    if (_player.playing) {
-      await _player.pause();
+    if (_playing) {
+      await _audioHandler.pause();
       setState(() => _status = 'Paused');
       return;
     }
@@ -92,11 +130,78 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
     try {
       setState(() => _status = 'Connecting...');
-      await _player.setUrl(url.toString());
-      await _player.play();
-      setState(() => _status = 'Playing');
-    } catch (_) {
-      setState(() => _status = 'Audio stream not available. Try reconnecting.');
+      await _audioHandler.playUnderSound(
+        UnderSoundStreamRequest(
+          link: widget.link,
+          channelContext: widget.channelContext,
+        ),
+      );
+      if (mounted) {
+        setState(() => _status = 'Playing');
+      }
+    } catch (error, stackTrace) {
+      developer.log(
+        'Unable to start playback from player screen.',
+        name: 'UnderSound.UI',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (mounted) {
+        setState(
+          () => _status = 'Audio stream not available. Try reconnecting.',
+        );
+      }
+    }
+  }
+
+  Future<void> _checkBatteryOptimization({required bool showPrompt}) async {
+    final ignored = await _powerService.isBatteryOptimizationIgnored();
+    if (!mounted) {
+      return;
+    }
+    setState(() => _batteryOptimizationIgnored = ignored);
+    if (!ignored && showPrompt) {
+      await _showBatteryOptimizationDialog();
+    }
+  }
+
+  Future<void> _showBatteryOptimizationDialog() async {
+    if (!mounted) {
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Keep audio playing'),
+          content: const Text(
+            'To keep audio playing while your screen is off, please allow UnderSound to ignore battery optimizations.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Later'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                Navigator.of(context).pop();
+                await _powerService.requestIgnoreBatteryOptimizations();
+                if (mounted) {
+                  await _checkBatteryOptimization(showPrompt: false);
+                }
+              },
+              child: const Text('Allow'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _openBatterySettings() async {
+    await _powerService.openBatterySettings();
+    if (mounted) {
+      await _checkBatteryOptimization(showPrompt: false);
     }
   }
 
@@ -128,11 +233,52 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(_status),
+                  if (!_batteryOptimizationIgnored) ...[
+                    const SizedBox(height: 12),
+                    Material(
+                      color: Theme.of(context).colorScheme.errorContainer,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              'Battery optimization is still enabled. Audio may stop when the screen turns off.',
+                              style: TextStyle(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onErrorContainer,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                FilledButton.tonalIcon(
+                                  onPressed: _showBatteryOptimizationDialog,
+                                  icon: const Icon(Icons.battery_saver),
+                                  label: const Text('Allow optimization bypass'),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: _openBatterySettings,
+                                  icon: const Icon(Icons.settings),
+                                  label: const Text('Open Battery Settings'),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 18),
-                  StreamBuilder<PlayerState>(
-                    stream: _player.playerStateStream,
+                  StreamBuilder<UnderSoundPlaybackSnapshot>(
+                    stream: _audioHandler.snapshots,
+                    initialData: _audioHandler.snapshot,
                     builder: (context, snapshot) {
-                      final playing = snapshot.data?.playing ?? _player.playing;
+                      final playing = snapshot.data?.playing ?? _playing;
                       return FilledButton.icon(
                         onPressed: _loading ? null : _togglePlayback,
                         icon: Icon(playing ? Icons.pause : Icons.play_arrow),
