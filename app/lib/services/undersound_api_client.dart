@@ -42,6 +42,53 @@ class UnderSoundApiClient {
     return HlsStatus.fromJson(json, serverUrl);
   }
 
+  /// Obtains temporary LiveKit join credentials from the Undersound API.
+  ///
+  /// Expected JSON shapes:
+  /// - `{ "url": "wss://...", "token": "..." }` (generic backends)
+  /// - `{ "livekitUrl": "wss://...", "token": "..." }` (Undersound web server today)
+  ///
+  /// Queries:
+  /// - Preferred for Undersound: `channelId`, `role=listener`, `token`
+  /// - Alternate: `room`, `identity` (caller must authorize on the backend)
+  Future<LiveKitTokenResponse> fetchLiveKitToken({
+    required Uri serverUrl,
+    required String listenerToken,
+    String? channelId,
+    String? room,
+    String? identity,
+  }) async {
+    final Map<String, String> queryParameters;
+    if (room != null &&
+        room.isNotEmpty &&
+        identity != null &&
+        identity.isNotEmpty) {
+      queryParameters = {
+        'room': room,
+        'identity': identity,
+        if (listenerToken.isNotEmpty) 'token': listenerToken,
+      };
+    } else if (channelId != null && channelId.isNotEmpty) {
+      queryParameters = {
+        'channelId': channelId,
+        'role': 'listener',
+        'token': listenerToken,
+      };
+    } else {
+      throw const ApiException(
+        'Missing LiveKit authorization (channel id or room/identity pair).',
+      );
+    }
+
+    final uri = serverUrl.replace(
+      path: '/api/livekit/token',
+      queryParameters: queryParameters,
+    );
+    final response = await _get(uri);
+    final json = _decode(response);
+    return LiveKitTokenResponse.fromJson(json);
+  }
+
   Future<HlsPlaylistInspection> inspectHlsPlaylist(Uri playlistUrl) async {
     final response = await _get(
       playlistUrl.replace(
@@ -119,4 +166,23 @@ class ApiException implements Exception {
 
   @override
   String toString() => message;
+}
+
+class LiveKitTokenResponse {
+  const LiveKitTokenResponse({required this.url, required this.token});
+
+  final String url;
+  final String token;
+
+  factory LiveKitTokenResponse.fromJson(Map<String, dynamic> json) {
+    final ws =
+        json['url']?.toString() ??
+        json['livekitUrl']?.toString() ??
+        json['websocketUrl']?.toString();
+    final tok = json['token']?.toString();
+    if (ws == null || ws.isEmpty || tok == null || tok.isEmpty) {
+      throw const ApiException('LiveKit token response was incomplete.');
+    }
+    return LiveKitTokenResponse(url: ws, token: tok);
+  }
 }

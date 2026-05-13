@@ -9,6 +9,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../models/listener_link.dart';
 import '../models/public_channel.dart';
 import 'android_power_service.dart';
+import 'hls_service.dart';
 import 'undersound_api_client.dart';
 
 enum UnderSoundPlaybackStatus {
@@ -97,7 +98,7 @@ class UnderSoundAudioHandler extends BaseAudioHandler {
   UnderSoundAudioHandler({
     UnderSoundApiClient apiClient = const UnderSoundApiClient(),
     AndroidPowerService powerService = const AndroidPowerService(),
-  }) : _apiClient = apiClient,
+  }) : _hlsService = HlsService(apiClient),
        _powerService = powerService {
     _configure();
   }
@@ -106,7 +107,7 @@ class UnderSoundAudioHandler extends BaseAudioHandler {
   static const _maxRetryDelay = Duration(seconds: 30);
   static const _bufferingReconnectDelay = Duration(seconds: 20);
 
-  final UnderSoundApiClient _apiClient;
+  final HlsService _hlsService;
   final AndroidPowerService _powerService;
   final AudioPlayer _player = AudioPlayer();
   final _snapshotController =
@@ -293,25 +294,22 @@ class UnderSoundAudioHandler extends BaseAudioHandler {
   }
 
   Future<Uri?> _resolveStreamUrl(UnderSoundStreamRequest request) async {
-    final hls = await _loadHlsStatus(request);
-    final url = hls.active ? hls.url : null;
+    final url = await _hlsService.resolvePlayableUrl(
+      serverUrl: request.link.serverUrl,
+      channelId: request.channelContext.channel.id,
+      token: request.link.token,
+    );
     if (url == null) {
-      return null;
-    }
-    final inspection = await _apiClient.inspectHlsPlaylist(url);
-    if (inspection.ended || inspection.stale) {
       developer.log(
-        'Ignoring stale HLS playlist: ended=${inspection.ended}, '
-        'lastProgramDateTime=${inspection.lastProgramDateTime}, url=$url.',
+        'HLS URL could not be resolved (inactive, ended, or stale playlist).',
         name: 'UnderSound.Audio',
       );
-      return null;
     }
     return url;
   }
 
   Future<HlsStatus> _loadHlsStatus(UnderSoundStreamRequest request) {
-    return _apiClient.loadHlsStatus(
+    return _hlsService.loadRawStatus(
       serverUrl: request.link.serverUrl,
       channelId: request.channelContext.channel.id,
       token: request.link.token,
