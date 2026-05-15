@@ -1,3 +1,6 @@
+<p align="center"><img width="200" height="200" align="center" alt="UnderSound-Logo" src="https://github.com/user-attachments/assets/192d87d0-b0a6-4086-b33d-f790b9949b0d" /></p>
+
+
 # UnderSound Mobile
 
 This folder contains the Flutter mobile app scaffold for the UnderSound listener app.
