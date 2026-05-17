@@ -1,56 +1,31 @@
 <p align="center"><img width="200" height="200" align="center" alt="UnderSound-Logo" src="https://github.com/user-attachments/assets/192d87d0-b0a6-4086-b33d-f790b9949b0d" /></p>
 
-
 # UnderSound Mobile
 
-This folder contains the Flutter mobile app scaffold for the UnderSound listener app.
+UnderSound Mobile lets listeners join live event audio from an UnderSound Studio server.
 
-## Structure
+Scan an UnderSound listener QR code, open a saved favorite, and listen through your phone or Bluetooth headphones.
 
-- `app/` — Flutter project generated with the bundled SDK
-- `flutter/` — local Flutter SDK checkout included in the repo
-- `.gitignore` — excludes Flutter SDK and generated build artifacts
+## Download
 
-## How to run
+[Download the latest Android APK](https://github.com/silvansan/UnderSound-Mobile/releases/latest/download/app-release.apk)
 
-From `UnderSound-Mobile/app`:
+After downloading, Android may ask you to allow installation from your browser or file manager.
 
-```powershell
-..\flutter\bin\flutter pub get
-..\flutter\bin\flutter run
-```
+## Audio Source
 
-## Release builds
+This app is the mobile listener companion for [UnderSound Studio](https://github.com/silvansan/UnderSound-Studio).
 
-Android artifacts are built from `UnderSound-Mobile/app`:
+Use UnderSound Studio to host events, publish live audio channels, and generate listener QR codes for this app.
 
-```powershell
-..\flutter\bin\flutter build apk --release
-..\flutter\bin\flutter build appbundle --release
-```
+## Features
 
-The APK is for direct install / GitHub releases. The AAB is for Google Play.
+- Scan listener QR codes.
+- Save favorite channels.
+- Listen with low-latency WebRTC or HLS fallback.
+- Control playback from Android media notifications.
+- Pause automatically when headphones or Bluetooth disconnect.
 
-Release signing uses local files that must not be committed:
+## Privacy
 
-- `app/android/upload-keystore.jks`
-- `app/android/key.properties`
-
-iOS release packaging requires macOS, Xcode, and an Apple Developer Program account.
-
-## Next steps
-
-Current app status:
-
-- Manual listener-link entry is wired.
-- QR scanning is wired for existing UnderSound listener links.
-- The app loads public channel metadata from the current server API.
-- HLS playback uses `just_audio` with `audio_session` configured for music playback.
-- Android/iOS metadata now includes camera and background-audio basics.
-
-Next steps:
-
-1. Add `audio_service` foreground notification / lock-screen media controls.
-2. Save and reopen the last listener link with `shared_preferences`.
-3. Add the planned event overview flow once `/api/mobile/events/:eventId` exists.
-4. Test on a physical Android phone against a live HLS stream.
+UnderSound Mobile is built for listening to live event audio. The app does not add advertising or tracking.
