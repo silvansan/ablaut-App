@@ -21,6 +21,17 @@ class ListenerLinkParser {
     }
 
     final segments = uri.pathSegments;
+    final firstSegment = segments.isEmpty ? '' : segments[0].toLowerCase();
+    if (segments.length >= 3 &&
+        (firstSegment == 'listen' || firstSegment == 'listener')) {
+      return ListenerLink(
+        serverUrl: _origin(uri),
+        eventSlug: segments[1],
+        channelSlug: segments[2],
+        originalUrl: uri,
+      );
+    }
+
     final eventIndex = segments.indexOf('e');
     if (eventIndex == -1 || segments.length <= eventIndex + 3) {
       throw const FormatException(
@@ -35,16 +46,11 @@ class ListenerLinkParser {
       );
     }
 
-    final token = uri.queryParameters['token'] ?? '';
-    if (token.isEmpty) {
-      throw const FormatException('The listener link is missing its token.');
-    }
-
     return ListenerLink(
       serverUrl: _origin(uri),
       eventSlug: segments[eventIndex + 1],
-      channelName: segments[eventIndex + 2],
-      token: token,
+      channelSlug: segments[eventIndex + 2],
+      originalUrl: uri,
     );
   }
 
@@ -52,23 +58,22 @@ class ListenerLinkParser {
     final server = uri.queryParameters['server'] ?? '';
     final event = uri.queryParameters['event'] ?? '';
     final channel = uri.queryParameters['channel'] ?? '';
-    final token = uri.queryParameters['token'] ?? '';
     final serverUri = Uri.tryParse(server);
 
     if (serverUri == null || !serverUri.hasScheme || serverUri.host.isEmpty) {
       throw const FormatException('The app link is missing a valid server.');
     }
-    if (event.isEmpty || channel.isEmpty || token.isEmpty) {
+    if (event.isEmpty || channel.isEmpty) {
       throw const FormatException(
-        'The app link is missing event, channel, or token data.',
+        'The app link is missing event or channel data.',
       );
     }
 
     return ListenerLink(
       serverUrl: _origin(serverUri),
       eventSlug: event,
-      channelName: channel,
-      token: token,
+      channelSlug: channel,
+      originalUrl: uri,
     );
   }
 

@@ -20,3 +20,24 @@ app/macos/
 *.iml
 Thumbs.db
 Desktop.ini
+
+# Secrets and local signing material. Never commit these.
+.env
+.env.*
+!.env.example
+*.pem
+*.p8
+*.p12
+*.cer
+*.mobileprovision
+*.keystore
+*.jks
+key.properties
+local.properties
+credentials.json
+service-account*.json
+google-services.json
+GoogleService-Info.plist
+app/android/key.properties
+app/android/*.jks
+app/android/*.keystore

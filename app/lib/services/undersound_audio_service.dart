@@ -10,6 +10,9 @@ import '../models/listener_link.dart';
 import '../models/public_channel.dart';
 import 'android_power_service.dart';
 import 'hls_service.dart';
+import 'livekit_playback_controller.dart';
+import 'livekit_service.dart';
+import 'stream_connection_service.dart';
 import 'undersound_api_client.dart';
 
 enum UnderSoundPlaybackStatus {
@@ -68,6 +71,8 @@ class UnderSoundAudioService {
   static final UnderSoundAudioService instance = UnderSoundAudioService._();
 
   UnderSoundAudioHandler? _handler;
+  final LiveKitPlaybackController webRtcController =
+      LiveKitPlaybackController();
 
   UnderSoundAudioHandler get handler {
     final handler = _handler;
@@ -83,10 +88,13 @@ class UnderSoundAudioService {
     }
 
     _handler = await AudioService.init<UnderSoundAudioHandler>(
-      builder: UnderSoundAudioHandler.new,
+      builder: () => UnderSoundAudioHandler(
+        webRtcController: webRtcController,
+      ),
       config: const AudioServiceConfig(
         androidNotificationChannelId: 'com.undersound.mobile.playback',
         androidNotificationChannelName: 'UnderSound is playing',
+        androidNotificationIcon: 'mipmap/ic_launcher',
         androidNotificationOngoing: true,
         androidStopForegroundOnPause: true,
       ),
@@ -94,19 +102,29 @@ class UnderSoundAudioService {
   }
 }
 
+enum _NotificationTransport {
+  hls,
+  webRtc,
+}
+
 class UnderSoundAudioHandler extends BaseAudioHandler {
   UnderSoundAudioHandler({
+    required LiveKitPlaybackController webRtcController,
     UnderSoundApiClient apiClient = const UnderSoundApiClient(),
     AndroidPowerService powerService = const AndroidPowerService(),
-  }) : _hlsService = HlsService(apiClient),
-       _powerService = powerService {
+  })  : _webRtcController = webRtcController,
+        _hlsService = HlsService(apiClient),
+        _powerService = powerService {
     _configure();
   }
 
   static const _retryBaseDelay = Duration(seconds: 2);
   static const _maxRetryDelay = Duration(seconds: 30);
   static const _bufferingReconnectDelay = Duration(seconds: 20);
+  static const _customActionMute = 'webrtc_mute';
+  static const _customActionUnmute = 'webrtc_unmute';
 
+  final LiveKitPlaybackController _webRtcController;
   final HlsService _hlsService;
   final AndroidPowerService _powerService;
   final AudioPlayer _player = AudioPlayer();
@@ -122,21 +140,25 @@ class UnderSoundAudioHandler extends BaseAudioHandler {
   Timer? _bufferingTimer;
   StreamSubscription<PlaybackEvent>? _playbackEventSubscription;
   StreamSubscription<PlayerState>? _playerStateSubscription;
+  StreamSubscription<LiveKitPlaybackSnapshot>? _webRtcSnapshotSubscription;
+  StreamSubscription<void>? _becomingNoisySubscription;
+  _NotificationTransport? _notificationTransport;
 
   Stream<UnderSoundPlaybackSnapshot> get snapshots =>
       _snapshotController.stream;
 
   UnderSoundPlaybackSnapshot get snapshot => UnderSoundPlaybackSnapshot(
-    status: _status,
-    playing: _player.playing,
-    message: _message,
-  );
+        status: _status,
+        playing: _player.playing,
+        message: _message,
+      );
 
   UnderSoundPlaybackStatus _status = UnderSoundPlaybackStatus.idle;
   String? _message;
 
   Future<void> playUnderSound(UnderSoundStreamRequest request) async {
     _request = request;
+    _notificationTransport = _NotificationTransport.hls;
     _wantsPlayback = true;
     _retryAttempt = 0;
     developer.log(
@@ -154,6 +176,13 @@ class UnderSoundAudioHandler extends BaseAudioHandler {
 
   @override
   Future<void> play() async {
+    if (_notificationTransport == _NotificationTransport.webRtc &&
+        _webRtcController.hasActiveSession) {
+      await _powerService.requestPostNotificationsPermission();
+      await _webRtcController.reconnectActiveSession();
+      return;
+    }
+
     final request = _request;
     if (request == null) {
       return;
@@ -169,6 +198,12 @@ class UnderSoundAudioHandler extends BaseAudioHandler {
 
   @override
   Future<void> pause() async {
+    if (_notificationTransport == _NotificationTransport.webRtc) {
+      await _webRtcController.disconnect(keepSession: true);
+      _publishWebRtcNotification(_webRtcController.snapshot);
+      return;
+    }
+
     _wantsPlayback = false;
     _retryTimer?.cancel();
     _bufferingTimer?.cancel();
@@ -179,6 +214,13 @@ class UnderSoundAudioHandler extends BaseAudioHandler {
 
   @override
   Future<void> stop() async {
+    if (_notificationTransport == _NotificationTransport.webRtc) {
+      await _webRtcController.disconnect();
+      _notificationTransport = null;
+      _publishIdleNotificationState();
+      return super.stop();
+    }
+
     _wantsPlayback = false;
     _retryTimer?.cancel();
     _bufferingTimer?.cancel();
@@ -188,11 +230,33 @@ class UnderSoundAudioHandler extends BaseAudioHandler {
     return super.stop();
   }
 
+  @override
+  Future<void> skipToPrevious() async {
+    if (_notificationTransport == _NotificationTransport.webRtc) {
+      await _webRtcController.toggleMuted();
+      return;
+    }
+    return super.skipToPrevious();
+  }
+
+  @override
+  Future<void> skipToNext() async {
+    if (_notificationTransport == _NotificationTransport.webRtc) {
+      await _webRtcController.disconnect();
+      _notificationTransport = null;
+      _publishIdleNotificationState();
+      return;
+    }
+    return super.skipToNext();
+  }
+
   Future<void> dispose() async {
     _retryTimer?.cancel();
     _bufferingTimer?.cancel();
     await _playbackEventSubscription?.cancel();
     await _playerStateSubscription?.cancel();
+    await _webRtcSnapshotSubscription?.cancel();
+    await _becomingNoisySubscription?.cancel();
     await _player.dispose();
     await _snapshotController.close();
   }
@@ -200,6 +264,11 @@ class UnderSoundAudioHandler extends BaseAudioHandler {
   Future<void> _configure() async {
     final session = await AudioSession.instance;
     await session.configure(const AudioSessionConfiguration.music());
+    _becomingNoisySubscription = session.becomingNoisyEventStream.listen(
+      (_) {
+        unawaited(_handleAudioBecomingNoisy());
+      },
+    );
 
     _playbackEventSubscription = _player.playbackEventStream.listen(
       (event) {
@@ -219,6 +288,33 @@ class UnderSoundAudioHandler extends BaseAudioHandler {
     _playerStateSubscription = _player.playerStateStream.listen(
       _handlePlayerState,
     );
+
+    _webRtcSnapshotSubscription = _webRtcController.snapshots.listen(
+      _publishWebRtcNotification,
+    );
+  }
+
+  Future<void> _handleAudioBecomingNoisy() async {
+    developer.log(
+      'Audio output disconnected; pausing playback.',
+      name: 'UnderSound.Audio',
+    );
+
+    if (_notificationTransport == _NotificationTransport.webRtc &&
+        _webRtcController.hasActiveSession) {
+      await _webRtcController.pauseForRouteChange();
+      _publishWebRtcNotification(_webRtcController.snapshot);
+      return;
+    }
+
+    if (_notificationTransport == _NotificationTransport.hls ||
+        _player.playing) {
+      await pause();
+      _setStatus(
+        UnderSoundPlaybackStatus.paused,
+        'Playback paused because audio output disconnected.',
+      );
+    }
   }
 
   Future<void> _loadAndPlay({required bool refreshUrl}) async {
@@ -254,9 +350,10 @@ class UnderSoundAudioHandler extends BaseAudioHandler {
       mediaItem.add(
         MediaItem(
           id: url.toString(),
-          title: 'UnderSound is playing',
+          title: 'UnderSound',
           album: request.channelContext.event.name,
-          artist: request.channelContext.channel.name,
+          artist:
+              '${request.channelContext.event.name} - ${request.channelContext.channel.name}',
           extras: {'url': url.toString()},
         ),
       );
@@ -266,9 +363,10 @@ class UnderSoundAudioHandler extends BaseAudioHandler {
           url,
           tag: MediaItem(
             id: url.toString(),
-            title: 'UnderSound is playing',
+            title: 'UnderSound',
             album: request.channelContext.event.name,
-            artist: request.channelContext.channel.name,
+            artist:
+                '${request.channelContext.event.name} - ${request.channelContext.channel.name}',
           ),
         ),
       );
@@ -296,12 +394,11 @@ class UnderSoundAudioHandler extends BaseAudioHandler {
   Future<Uri?> _resolveStreamUrl(UnderSoundStreamRequest request) async {
     final url = await _hlsService.resolvePlayableUrl(
       serverUrl: request.link.serverUrl,
-      channelId: request.channelContext.channel.id,
-      token: request.link.token,
+      channel: request.channelContext.channel,
     );
     if (url == null) {
       developer.log(
-        'HLS URL could not be resolved (inactive, ended, or stale playlist).',
+        'Fallback audio URL could not be resolved.',
         name: 'UnderSound.Audio',
       );
     }
@@ -311,8 +408,7 @@ class UnderSoundAudioHandler extends BaseAudioHandler {
   Future<HlsStatus> _loadHlsStatus(UnderSoundStreamRequest request) {
     return _hlsService.loadRawStatus(
       serverUrl: request.link.serverUrl,
-      channelId: request.channelContext.channel.id,
-      token: request.link.token,
+      channel: request.channelContext.channel,
     );
   }
 
@@ -378,9 +474,9 @@ class UnderSoundAudioHandler extends BaseAudioHandler {
     _setStatus(UnderSoundPlaybackStatus.reconnecting, 'Reconnecting...');
     final delaySeconds =
         (_retryBaseDelay.inSeconds * (1 << _retryAttempt)).clamp(
-          _retryBaseDelay.inSeconds,
-          _maxRetryDelay.inSeconds,
-        );
+      _retryBaseDelay.inSeconds,
+      _maxRetryDelay.inSeconds,
+    );
     _retryAttempt = (_retryAttempt + 1).clamp(0, 8);
 
     developer.log(
@@ -414,6 +510,109 @@ class UnderSoundAudioHandler extends BaseAudioHandler {
     _status = status;
     _message = message;
     _snapshotController.add(snapshot);
+  }
+
+  @override
+  Future<dynamic> customAction(
+    String name, [
+    Map<String, dynamic>? extras,
+  ]) async {
+    switch (name) {
+      case _customActionMute:
+        await _webRtcController.setMuted(true);
+        return null;
+      case _customActionUnmute:
+        await _webRtcController.setMuted(false);
+        return null;
+    }
+    return super.customAction(name, extras);
+  }
+
+  void _publishWebRtcNotification(LiveKitPlaybackSnapshot snapshot) {
+    final context = _webRtcController.activeChannelContext;
+    final link = _webRtcController.activeLink;
+    if (context == null || link == null) {
+      if (_notificationTransport == _NotificationTransport.webRtc) {
+        _publishIdleNotificationState();
+      }
+      return;
+    }
+
+    if (snapshot.phase != StreamConnectionPhase.idle ||
+        _notificationTransport == _NotificationTransport.webRtc) {
+      _notificationTransport = _NotificationTransport.webRtc;
+    } else {
+      return;
+    }
+
+    unawaited(_powerService.requestPostNotificationsPermission());
+
+    mediaItem.add(
+      MediaItem(
+        id: link.originalUrl.toString(),
+        title: 'UnderSound',
+        album: context.event.name,
+        artist: '${context.event.name} - ${context.channel.name}',
+        extras: {
+          'transport': 'webrtc',
+          'server': link.serverUrl.toString(),
+        },
+      ),
+    );
+
+    playbackState.add(_webRtcPlaybackState(snapshot));
+  }
+
+  PlaybackState _webRtcPlaybackState(LiveKitPlaybackSnapshot snapshot) {
+    final controls = <MediaControl>[
+      if (snapshot.connected ||
+          snapshot.phase == StreamConnectionPhase.connecting ||
+          snapshot.phase == StreamConnectionPhase.reconnecting)
+        MediaControl.pause
+      else
+        MediaControl.play,
+      _nativeMuteControl(snapshot.muted),
+      const MediaControl(
+        androidIcon: 'drawable/audio_service_stop',
+        label: 'Stop',
+        action: MediaAction.skipToNext,
+      ),
+    ];
+
+    return PlaybackState(
+      controls: controls,
+      androidCompactActionIndices: const [0, 1],
+      processingState: switch (snapshot.phase) {
+        StreamConnectionPhase.connecting => AudioProcessingState.loading,
+        StreamConnectionPhase.reconnecting => AudioProcessingState.buffering,
+        StreamConnectionPhase.connected => AudioProcessingState.ready,
+        StreamConnectionPhase.failed => AudioProcessingState.error,
+        StreamConnectionPhase.idle => AudioProcessingState.ready,
+      },
+      playing: snapshot.connected ||
+          snapshot.phase == StreamConnectionPhase.connecting ||
+          snapshot.phase == StreamConnectionPhase.reconnecting,
+    );
+  }
+
+  MediaControl _nativeMuteControl(bool muted) {
+    return MediaControl(
+      androidIcon: muted
+          ? 'drawable/ic_notification_volume_up'
+          : 'drawable/ic_notification_volume_off',
+      label: muted ? 'Unmute' : 'Mute',
+      action: MediaAction.skipToPrevious,
+    );
+  }
+
+  void _publishIdleNotificationState() {
+    playbackState.add(
+      PlaybackState(
+        controls: const [],
+        processingState: AudioProcessingState.idle,
+        playing: false,
+      ),
+    );
   }
 
   PlaybackState _transformEvent(PlaybackEvent event) {

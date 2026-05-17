@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'favorites_screen.dart';
-import 'manual_link_screen.dart';
 import 'scan_qr_screen.dart';
+
+const _appVersionLabel = 'Version 0.2.1';
+const _githubRepositoryUrl = 'https://github.com/silvansan/UnderSound-Mobile';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -59,18 +62,52 @@ class HomeScreen extends StatelessWidget {
                 MaterialPageRoute(builder: (_) => const ScanQrScreen()),
               ),
             ),
-            const SizedBox(height: 14),
-            _HomeActionCard(
-              icon: Icons.link_rounded,
-              title: 'Manual link',
-              subtitle: 'Paste or type a listener URL.',
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const ManualLinkScreen()),
-              ),
+            const SizedBox(height: 28),
+            _AppInfoFooter(
+              onOpenRepository: () => _openRepository(context),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Future<void> _openRepository(BuildContext context) async {
+    final uri = Uri.parse(_githubRepositoryUrl);
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open GitHub repository.')),
+      );
+    }
+  }
+}
+
+class _AppInfoFooter extends StatelessWidget {
+  const _AppInfoFooter({required this.onOpenRepository});
+
+  final VoidCallback onOpenRepository;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Column(
+      children: [
+        Text(
+          _appVersionLabel,
+          style: textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextButton.icon(
+          onPressed: onOpenRepository,
+          icon: const Icon(Icons.code_rounded),
+          label: const Text('GitHub repository'),
+        ),
+      ],
     );
   }
 }

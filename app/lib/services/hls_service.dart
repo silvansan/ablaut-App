@@ -1,7 +1,7 @@
 import '../models/public_channel.dart';
 import 'undersound_api_client.dart';
 
-/// Server-side snapshot of whether HLS is available for listeners.
+/// Snapshot of whether a public fallback stream is available for listeners.
 typedef HlsStreamSummary = ({
   Uri? playableUrl,
   String statusSummary,
@@ -12,68 +12,61 @@ class HlsService {
 
   final UnderSoundApiClient api;
 
-  /// Resolves whether the HLS URL is playable (active, inspected, non-stale).
+  /// Resolves the server-provided Icecast fallback stream, when present.
   Future<Uri?> resolvePlayableUrl({
     required Uri serverUrl,
-    required String channelId,
-    required String token,
+    required PublicChannel channel,
   }) async {
-    final hls = await api.loadHlsStatus(
-      serverUrl: serverUrl,
-      channelId: channelId,
-      token: token,
-    );
-    final url = hls.active ? hls.url : null;
-    if (url == null) {
-      return null;
-    }
-    final inspection = await api.inspectHlsPlaylist(url);
-    if (inspection.ended || inspection.stale) {
-      return null;
-    }
-    return url;
+    return _fallbackUrl(serverUrl: serverUrl, channel: channel);
   }
 
-  /// Human-facing status plus optional URL after validation (playlist inspection).
+  /// Human-facing status plus optional fallback URL.
   Future<HlsStreamSummary> summarizePublicStream({
     required Uri serverUrl,
-    required String channelId,
-    required String token,
+    required PublicChannel channel,
   }) async {
-    final hls = await api.loadHlsStatus(
-      serverUrl: serverUrl,
-      channelId: channelId,
-      token: token,
-    );
-    Uri? playable = hls.active ? hls.url : null;
-    final baseMessage = hls.reason ?? hls.status;
-    if (playable != null) {
-      final inspection = await api.inspectHlsPlaylist(playable);
-      if (inspection.ended || inspection.stale) {
-        playable = null;
-        return (
-          playableUrl: null,
-          statusSummary:
-              'The HLS playlist has ended or is stale. Ask the speaker to restart publishing.',
-        );
-      }
+    final playable = _fallbackUrl(serverUrl: serverUrl, channel: channel);
+    if (playable == null) {
+      return (
+        playableUrl: null,
+        statusSummary:
+            'No fallback audio stream is available for this channel.',
+      );
     }
-    final summary = playable != null
-        ? 'Stream is live'
-        : (baseMessage == 'stopped' ? 'Waiting for speaker' : baseMessage);
 
-    return (playableUrl: playable, statusSummary: summary);
+    return (
+      playableUrl: playable,
+      statusSummary: 'Fallback stream is available'
+    );
   }
 
   Future<HlsStatus> loadRawStatus({
     required Uri serverUrl,
-    required String channelId,
-    required String token,
+    required PublicChannel channel,
   }) {
-    return api.loadHlsStatus(
-      serverUrl: serverUrl,
-      channelId: channelId,
-      token: token,
+    final playable = _fallbackUrl(serverUrl: serverUrl, channel: channel);
+    return Future.value(
+      HlsStatus(
+        active: playable != null,
+        url: playable,
+        status: playable == null ? 'stopped' : 'active',
+        reason: playable == null
+            ? 'No fallback audio stream is available for this channel.'
+            : null,
+      ),
     );
+  }
+
+  Uri? _fallbackUrl({
+    required Uri serverUrl,
+    required PublicChannel channel,
+  }) {
+    final rawUrl = channel.icecastFallbackUrl;
+    if (rawUrl.isEmpty) {
+      return null;
+    }
+
+    final candidate = Uri.parse(rawUrl);
+    return candidate.hasScheme ? candidate : serverUrl.resolveUri(candidate);
   }
 }

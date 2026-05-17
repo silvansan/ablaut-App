@@ -6,6 +6,7 @@ import '../services/listener_link_parser.dart';
 import '../services/undersound_api_client.dart';
 import 'edit_favorite_screen.dart';
 import 'player_screen.dart';
+import 'scan_qr_screen.dart';
 
 class FavoritesScreen extends StatefulWidget {
   const FavoritesScreen({super.key});
@@ -86,15 +87,12 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   }
 
   Future<void> _addFavorite() async {
-    final favorite = await Navigator.of(context).push<FavoriteChannel>(
-      MaterialPageRoute(builder: (_) => const EditFavoriteScreen()),
-    );
-    if (favorite == null) {
-      return;
-    }
-    await _favoritesService.addFavorite(
-      name: favorite.name,
-      url: favorite.url,
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const ScanQrScreen(
+          addScannedChannelToFavorites: true,
+        ),
+      ),
     );
     await _loadFavorites();
   }
@@ -148,7 +146,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       appBar: AppBar(title: const Text('My favorites')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _addFavorite,
-        icon: const Icon(Icons.add_rounded),
+        icon: const Icon(Icons.qr_code_scanner_rounded),
         label: const Text('Add'),
       ),
       body: RefreshIndicator(
@@ -275,8 +273,8 @@ class _EmptyFavorites extends StatelessWidget {
           const SizedBox(height: 20),
           FilledButton.icon(
             onPressed: onAdd,
-            icon: const Icon(Icons.add_rounded),
-            label: const Text('Add favorite'),
+            icon: const Icon(Icons.qr_code_scanner_rounded),
+            label: const Text('Scan QR code'),
           ),
         ],
       ),

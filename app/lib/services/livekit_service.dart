@@ -16,6 +16,7 @@ class LiveKitPlaybackSnapshot {
     this.message,
     this.lastErrorDetail,
     this.livekitRoomConnected = false,
+    this.muted = false,
   });
 
   final StreamConnectionPhase phase;
@@ -23,6 +24,7 @@ class LiveKitPlaybackSnapshot {
   final String? message;
   final String? lastErrorDetail;
   final bool livekitRoomConnected;
+  final bool muted;
 
   LiveKitPlaybackSnapshot copyWith({
     StreamConnectionPhase? phase,
@@ -32,6 +34,7 @@ class LiveKitPlaybackSnapshot {
     bool clearErrorDetail = false,
     bool clearMessage = false,
     bool? livekitRoomConnected,
+    bool? muted,
   }) {
     return LiveKitPlaybackSnapshot(
       phase: phase ?? this.phase,
@@ -39,8 +42,8 @@ class LiveKitPlaybackSnapshot {
       message: clearMessage ? null : (message ?? this.message),
       lastErrorDetail:
           clearErrorDetail ? null : (lastErrorDetail ?? this.lastErrorDetail),
-      livekitRoomConnected:
-          livekitRoomConnected ?? this.livekitRoomConnected,
+      livekitRoomConnected: livekitRoomConnected ?? this.livekitRoomConnected,
+      muted: muted ?? this.muted,
     );
   }
 }
@@ -68,6 +71,7 @@ class LiveKitService {
   Room? _room;
   CancelListenFunc? _cancelListen;
   bool _intentToDisconnect = false;
+  bool _muted = false;
   Completer<void>? _connectCompleter;
 
   Stream<LiveKitPlaybackSnapshot> get snapshots {
@@ -105,11 +109,9 @@ class LiveKitService {
       );
 
       await _ensureAudioSession();
-      final cred = await _api.fetchLiveKitToken(
-        serverUrl: link.serverUrl,
-        listenerToken: link.token,
-        channelId: channelContext.channel.id,
-        room: roomNameOverride,
+      _muted = false;
+      final cred = await _api.fetchListenerToken(
+        link: link,
         identity: participantIdentityOverride,
       );
       await _openRoom(link, channelContext, cred.url, cred.token);
@@ -133,14 +135,15 @@ class LiveKitService {
     }
   }
 
-  Future<void> disconnect() async {
+  Future<void> disconnect({String? message}) async {
     _intentToDisconnect = true;
     try {
       await _shutdownRoomOnly();
-      _snapshot = const LiveKitPlaybackSnapshot(
+      _snapshot = LiveKitPlaybackSnapshot(
         phase: StreamConnectionPhase.idle,
         connected: false,
-        message: 'Tap play to join with WebRTC.',
+        message: message ?? 'Tap play to join with WebRTC.',
+        muted: _muted,
       );
       _broadcast();
     } catch (error, stack) {
@@ -160,6 +163,22 @@ class LiveKitService {
     await _snapshotController?.close();
     _snapshotController = null;
   }
+
+  Future<void> setMuted(bool muted) async {
+    if (_muted == muted) {
+      return;
+    }
+    _muted = muted;
+    await _applyMuteState();
+    _emit(
+      _snapshot.copyWith(
+        muted: muted,
+        message: muted ? 'Muted (WebRTC)' : 'Listening (WebRTC)',
+      ),
+    );
+  }
+
+  Future<void> toggleMuted() => setMuted(!_muted);
 
   Future<void> _openRoom(
     ListenerLink link,
@@ -185,11 +204,13 @@ class LiveKitService {
     );
 
     await _primeExisting(room);
+    await _applyMuteState();
 
     final hasReceiver = remoteAudioPresent(room);
 
     final roomLabel = '${ctx.event.name} · ${ctx.channel.name}';
-    final hostSuffix = link.serverUrl.hasAuthority ? ' · ${link.serverUrl.host}' : '';
+    final hostSuffix =
+        link.serverUrl.hasAuthority ? ' · ${link.serverUrl.host}' : '';
 
     _emit(
       LiveKitPlaybackSnapshot(
@@ -200,6 +221,7 @@ class LiveKitService {
             : 'Connected via WebRTC — waiting for speaker — $roomLabel$hostSuffix',
         lastErrorDetail: null,
         livekitRoomConnected: true,
+        muted: _muted,
       ),
     );
   }
@@ -282,8 +304,7 @@ class LiveKitService {
       await _bootstrapAudioTrack(event.track);
 
       if (_snapshot.livekitRoomConnected) {
-        final hasAudio =
-            remoteAudioPresent(room);
+        final hasAudio = remoteAudioPresent(room);
         _emit(
           _snapshot.copyWith(
             phase: StreamConnectionPhase.connected,
@@ -291,6 +312,7 @@ class LiveKitService {
             message: hasAudio
                 ? 'Listening (WebRTC)'
                 : 'Connected via WebRTC — waiting for speaker',
+            muted: _muted,
           ),
         );
       }
@@ -300,8 +322,7 @@ class LiveKitService {
 
     if (event is TrackSubscriptionExceptionEvent) {
       final id = event.participant?.identity ?? 'unknown participant';
-      final human =
-          'WebRTC subscribe failed ($id): ${event.reason}.';
+      final human = 'WebRTC subscribe failed ($id): ${event.reason}.';
       developer.log(human, name: 'UnderSound.WebRTC');
 
       await _shutdownRoomOnly();
@@ -314,14 +335,40 @@ class LiveKitService {
       return;
     }
     try {
-      await track.start();
+      await _applyTrackMuteState(track);
     } catch (error, stackTrace) {
       developer.log(
-        'Failed to start RemoteAudioTrack.',
+        'Failed to update RemoteAudioTrack mute state.',
         name: 'UnderSound.WebRTC',
         error: error,
         stackTrace: stackTrace,
       );
+    }
+  }
+
+  Future<void> _applyMuteState() async {
+    final room = _room;
+    if (room == null) {
+      return;
+    }
+    for (final participant in room.remoteParticipants.values) {
+      for (final publication in participant.audioTrackPublications) {
+        final track = publication.track;
+        if (track is RemoteAudioTrack) {
+          await _applyTrackMuteState(track);
+        }
+      }
+    }
+  }
+
+  Future<void> _applyTrackMuteState(RemoteAudioTrack track) async {
+    if (!track.isActive) {
+      await track.start();
+    }
+    if (_muted) {
+      await track.disable();
+    } else {
+      await track.enable();
     }
   }
 
@@ -353,6 +400,7 @@ class LiveKitService {
       livekitRoomConnected: false,
       message: 'WebRTC connection failed.',
       lastErrorDetail: detail,
+      muted: _muted,
     );
     _broadcast();
   }

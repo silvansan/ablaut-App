@@ -2,12 +2,18 @@ import 'package:flutter/material.dart';
 
 import '../models/listener_link.dart';
 import '../models/public_channel.dart';
+import '../services/favorites_service.dart';
 import '../services/listener_link_parser.dart';
 import '../services/undersound_api_client.dart';
 import 'player_screen.dart';
 
 class ManualLinkScreen extends StatefulWidget {
-  const ManualLinkScreen({super.key});
+  const ManualLinkScreen({
+    super.key,
+    this.addConnectedChannelToFavorites = false,
+  });
+
+  final bool addConnectedChannelToFavorites;
 
   @override
   State<ManualLinkScreen> createState() => _ManualLinkScreenState();
@@ -16,6 +22,7 @@ class ManualLinkScreen extends StatefulWidget {
 class _ManualLinkScreenState extends State<ManualLinkScreen> {
   final _controller = TextEditingController();
   final _api = const UnderSoundApiClient();
+  final _favoritesService = const FavoritesService();
   bool _loading = false;
   String? _error;
 
@@ -34,6 +41,12 @@ class _ManualLinkScreenState extends State<ManualLinkScreen> {
     try {
       final link = ListenerLinkParser.parse(_controller.text);
       final channelContext = await _api.loadPublicChannel(link);
+      if (widget.addConnectedChannelToFavorites) {
+        await _favoritesService.addFavorite(
+          name: '${channelContext.event.name} - ${channelContext.channel.name}',
+          url: link.originalUrl.toString(),
+        );
+      }
       if (!mounted) return;
       _openPlayer(link, channelContext);
     } on FormatException catch (error) {

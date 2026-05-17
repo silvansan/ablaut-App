@@ -15,8 +15,16 @@ void main() {
     await tester.pumpWidget(const UnderSoundMobileApp());
 
     expect(find.text('UnderSound Mobile'), findsOneWidget);
-    expect(find.text('Welcome to UnderSound Mobile'), findsOneWidget);
-    expect(find.byIcon(Icons.qr_code_scanner), findsOneWidget);
-    expect(find.text('Enter event URL manually'), findsOneWidget);
+    expect(
+      find.text(
+        'Join an UnderSound event, listen to live channel audio, and keep your favorite listener links ready.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.byIcon(Icons.qr_code_scanner_rounded), findsOneWidget);
+    expect(find.text('My favorites'), findsOneWidget);
+    expect(find.text('Version 0.2.1'), findsOneWidget);
+    expect(find.text('GitHub repository'), findsOneWidget);
+    expect(find.text('Manual link'), findsNothing);
   });
 }

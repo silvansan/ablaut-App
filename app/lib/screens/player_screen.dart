@@ -8,6 +8,7 @@ import '../models/public_channel.dart';
 import '../services/android_power_service.dart';
 import '../services/favorites_service.dart';
 import '../services/hls_service.dart';
+import '../services/livekit_playback_controller.dart';
 import '../services/livekit_service.dart';
 import '../services/stream_connection_service.dart';
 import '../services/undersound_audio_service.dart';
@@ -32,7 +33,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   final _powerService = const AndroidPowerService();
   final _favoritesService = const FavoritesService();
   late final UnderSoundAudioHandler _audioHandler;
-  late final LiveKitService _liveKit;
+  late final LiveKitPlaybackController _webRtcController;
 
   StreamSubscription<UnderSoundPlaybackSnapshot>? _snapshotSubscription;
   StreamSubscription<LiveKitPlaybackSnapshot>? _webrtcSnapshots;
@@ -59,7 +60,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void initState() {
     super.initState();
     _audioHandler = UnderSoundAudioService.instance.handler;
-    _liveKit = LiveKitService();
+    _webRtcController = UnderSoundAudioService.instance.webRtcController;
 
     _snapshotSubscription = _audioHandler.snapshots.listen((snapshot) {
       if (!mounted) {
@@ -78,13 +79,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _status = hlsBaseline.displayText;
     _playing = hlsBaseline.playing;
 
-    _webrtcSnapshots = _liveKit.snapshots.listen((snapshot) {
+    _webrtcSnapshots = _webRtcController.snapshots.listen((snapshot) {
       if (!mounted) {
         return;
       }
       setState(() => _webrtcSnap = snapshot);
     });
-    _webrtcSnap = _liveKit.snapshot;
+    _webrtcSnap = _webRtcController.snapshot;
 
     _checkBatteryOptimization(showPrompt: true);
     _loadFavoriteState();
@@ -95,7 +96,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void dispose() {
     _snapshotSubscription?.cancel();
     _webrtcSnapshots?.cancel();
-    unawaited(_liveKit.dispose());
+    unawaited(_webRtcController.disconnect());
     super.dispose();
   }
 
@@ -132,7 +133,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }
     } else if (mounted) {
       setState(() {
-        _webrtcSnap = _liveKit.snapshot;
+        _webrtcSnap = _webRtcController.snapshot;
       });
     }
   }
@@ -211,7 +212,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   Future<void> _mutePreviousTransport(StreamTransportMode previous) async {
     if (previous == StreamTransportMode.webRtc) {
-      await _liveKit.disconnect();
+      await _webRtcController.disconnect(keepSession: true);
       return;
     }
     await _audioHandler.pause();
@@ -231,8 +232,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     try {
       final summary = await _hlsService.summarizePublicStream(
         serverUrl: widget.link.serverUrl,
-        channelId: widget.channelContext.channel.id,
-        token: widget.link.token,
+        channel: widget.channelContext.channel,
       );
       developer.log(
         'HLS summary: url=${summary.playableUrl}, status=${summary.statusSummary}.',
@@ -323,7 +323,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (_webrtcSnap.connected) {
       setState(() => _webrtcBusy = true);
       try {
-        await _liveKit.disconnect();
+        await _webRtcController.disconnect(keepSession: true);
       } finally {
         if (mounted) {
           setState(() => _webrtcBusy = false);
@@ -334,7 +334,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
     setState(() => _webrtcBusy = true);
     try {
-      await _liveKit.connect(
+      await _powerService.requestPostNotificationsPermission();
+      await _webRtcController.connect(
         link: widget.link,
         channelContext: widget.channelContext,
       );
@@ -372,6 +373,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Future<void> _tryWebRtcFromHls() async {
     await _switchTransport(StreamTransportMode.webRtc);
     await _toggleWebRtcPlayback();
+  }
+
+  Future<void> _toggleWebRtcMute() async {
+    await _webRtcController.toggleMuted();
   }
 
   Future<void> _checkBatteryOptimization({required bool showPrompt}) async {
@@ -448,17 +453,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   String get _listenerUrl {
-    return widget.link.serverUrl
-        .replace(
-          pathSegments: [
-            'e',
-            widget.link.eventSlug,
-            widget.link.channelName,
-            'listen',
-          ],
-          queryParameters: {'token': widget.link.token},
-        )
-        .toString();
+    return widget.link.serverUrl.replace(
+      pathSegments: [
+        'listen',
+        widget.link.eventSlug,
+        widget.link.channelSlug,
+      ],
+    ).toString();
   }
 
   @override
@@ -477,262 +478,281 @@ class _PlayerScreenState extends State<PlayerScreen> {
         }
       },
       child: Scaffold(
-      appBar: AppBar(
-        leading: BackButton(
-          onPressed: () {
-            unawaited(_handleAppBarBack());
-          },
-        ),
-        title: const Text('Listen'),
-        actions: [
-          IconButton(
-            onPressed: (_favoriteSaved || _savingFavorite)
-                ? null
-                : () {
-                    unawaited(_saveFavorite());
-                  },
-            tooltip: _favoriteSaved ? 'Saved' : 'Save favorite',
-            icon: _savingFavorite
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Icon(
-                    _favoriteSaved
-                        ? Icons.favorite_rounded
-                        : Icons.favorite_border_rounded,
-                  ),
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text(event.name, style: Theme.of(context).textTheme.headlineSmall),
-          if (event.description.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(event.description),
-          ],
-          const SizedBox(height: 16),
-          SegmentedButton<StreamTransportMode>(
-            segments: const [
-              ButtonSegment<StreamTransportMode>(
-                value: StreamTransportMode.webRtc,
-                label: Text('WebRTC'),
-                icon: Icon(Icons.bolt_rounded),
-              ),
-              ButtonSegment<StreamTransportMode>(
-                value: StreamTransportMode.hls,
-                label: Text('HLS'),
-                icon: Icon(Icons.stream_rounded),
-              ),
-            ],
-            selected: <StreamTransportMode>{_transport},
-            onSelectionChanged: (modes) async {
-              final next = modes.first;
-              await _switchTransport(next);
+        appBar: AppBar(
+          leading: BackButton(
+            onPressed: () {
+              unawaited(_handleAppBarBack());
             },
           ),
-          const SizedBox(height: 8),
-          Text(
-            _transport == StreamTransportMode.webRtc
-                ? 'Default: lowest latency via LiveKit.'
-                : 'Higher latency but ideal for locking the screen.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          const SizedBox(height: 18),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    channel.name,
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(_primaryStatusLine),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: (_favoriteSaved || _savingFavorite)
-                        ? null
-                        : () {
-                            unawaited(_saveFavorite());
-                          },
-                    icon: Icon(
+          title: const Text('Listen'),
+          actions: [
+            IconButton(
+              onPressed: (_favoriteSaved || _savingFavorite)
+                  ? null
+                  : () {
+                      unawaited(_saveFavorite());
+                    },
+              tooltip: _favoriteSaved ? 'Saved' : 'Save favorite',
+              icon: _savingFavorite
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(
                       _favoriteSaved
                           ? Icons.favorite_rounded
                           : Icons.favorite_border_rounded,
                     ),
-                    label: Text(_favoriteSaved ? 'Saved' : 'Save favorite'),
-                  ),
-                  if (_transport == StreamTransportMode.webRtc &&
-                      _webrtcSnap.phase == StreamConnectionPhase.failed &&
-                      (_webrtcSnap.lastErrorDetail ?? '').isNotEmpty) ...[
+            ),
+          ],
+        ),
+        body: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Text(event.name, style: Theme.of(context).textTheme.headlineSmall),
+            if (event.description.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(event.description),
+            ],
+            const SizedBox(height: 16),
+            SegmentedButton<StreamTransportMode>(
+              segments: const [
+                ButtonSegment<StreamTransportMode>(
+                  value: StreamTransportMode.webRtc,
+                  label: Text('WebRTC'),
+                  icon: Icon(Icons.bolt_rounded),
+                ),
+                ButtonSegment<StreamTransportMode>(
+                  value: StreamTransportMode.hls,
+                  label: Text('HLS'),
+                  icon: Icon(Icons.stream_rounded),
+                ),
+              ],
+              selected: <StreamTransportMode>{_transport},
+              onSelectionChanged: (modes) async {
+                final next = modes.first;
+                await _switchTransport(next);
+              },
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _transport == StreamTransportMode.webRtc
+                  ? 'Default: lowest latency via LiveKit.'
+                  : 'Higher latency but ideal for locking the screen.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 18),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      channel.name,
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
                     const SizedBox(height: 8),
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.errorContainer,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Text(
-                          _webrtcSnap.lastErrorDetail!,
-                          style: TextStyle(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onErrorContainer,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    FilledButton.icon(
-                      onPressed: _webrtcBusy
-                          ? null
-                          : () {
-                              unawaited(_switchToHlsAfterWebRtcFailure());
-                            },
-                      icon: const Icon(Icons.stream_rounded),
-                      label: const Text('Switch to HLS'),
-                    ),
-                  ],
-                  if (_transport == StreamTransportMode.hls) ...[
+                    Text(_primaryStatusLine),
                     const SizedBox(height: 12),
                     OutlinedButton.icon(
-                      onPressed: _webrtcBusy
+                      onPressed: (_favoriteSaved || _savingFavorite)
                           ? null
                           : () {
-                              unawaited(_tryWebRtcFromHls());
+                              unawaited(_saveFavorite());
                             },
-                      icon: const Icon(Icons.bolt_rounded),
-                      label: const Text('Try WebRTC again'),
+                      icon: Icon(
+                        _favoriteSaved
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded,
+                      ),
+                      label: Text(_favoriteSaved ? 'Saved' : 'Save favorite'),
                     ),
-                  ],
-                  if (!_batteryOptimizationIgnored) ...[
-                    const SizedBox(height: 12),
-                    Material(
-                      color: Theme.of(context).colorScheme.errorContainer,
-                      borderRadius: BorderRadius.circular(8),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Text(
-                              'Battery optimization is still enabled. Audio may stop when the screen turns off.',
-                              style: TextStyle(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onErrorContainer,
-                              ),
+                    if (_transport == StreamTransportMode.webRtc &&
+                        _webrtcSnap.phase == StreamConnectionPhase.failed &&
+                        (_webrtcSnap.lastErrorDetail ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.errorContainer,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Text(
+                            _webrtcSnap.lastErrorDetail!,
+                            style: TextStyle(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onErrorContainer,
                             ),
-                            const SizedBox(height: 8),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                FilledButton.tonalIcon(
-                                  onPressed: _showBatteryOptimizationDialog,
-                                  icon: const Icon(Icons.battery_saver),
-                                  label: const Text('Allow optimization bypass'),
-                                ),
-                                OutlinedButton.icon(
-                                  onPressed: _openBatterySettings,
-                                  icon: const Icon(Icons.settings),
-                                  label: const Text('Open Battery Settings'),
-                                ),
-                              ],
-                            ),
-                          ],
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                  const SizedBox(height: 18),
-                  if (_transport == StreamTransportMode.hls)
-                    StreamBuilder<UnderSoundPlaybackSnapshot>(
-                      stream: _audioHandler.snapshots,
-                      initialData: _audioHandler.snapshot,
-                      builder: (context, snapshot) {
-                        final playing = snapshot.data?.playing ?? _playing;
-                        final hlsPhase = StreamConnectionService.phaseForHls(
-                          snapshot.data?.status ??
-                              UnderSoundPlaybackStatus.idle,
-                        );
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                'HLS • ${_phaseLabel(hlsPhase)}',
-                                style: Theme.of(context).textTheme.bodySmall,
+                      const SizedBox(height: 12),
+                      FilledButton.icon(
+                        onPressed: _webrtcBusy
+                            ? null
+                            : () {
+                                unawaited(_switchToHlsAfterWebRtcFailure());
+                              },
+                        icon: const Icon(Icons.stream_rounded),
+                        label: const Text('Switch to HLS'),
+                      ),
+                    ],
+                    if (_transport == StreamTransportMode.hls) ...[
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: _webrtcBusy
+                            ? null
+                            : () {
+                                unawaited(_tryWebRtcFromHls());
+                              },
+                        icon: const Icon(Icons.bolt_rounded),
+                        label: const Text('Try WebRTC again'),
+                      ),
+                    ],
+                    if (!_batteryOptimizationIgnored) ...[
+                      const SizedBox(height: 12),
+                      Material(
+                        color: Theme.of(context).colorScheme.errorContainer,
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(
+                                'Battery optimization is still enabled. Audio may stop when the screen turns off.',
+                                style: TextStyle(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onErrorContainer,
+                                ),
                               ),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  FilledButton.tonalIcon(
+                                    onPressed: _showBatteryOptimizationDialog,
+                                    icon: const Icon(Icons.battery_saver),
+                                    label:
+                                        const Text('Allow optimization bypass'),
+                                  ),
+                                  OutlinedButton.icon(
+                                    onPressed: _openBatterySettings,
+                                    icon: const Icon(Icons.settings),
+                                    label: const Text('Open Battery Settings'),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 18),
+                    if (_transport == StreamTransportMode.hls)
+                      StreamBuilder<UnderSoundPlaybackSnapshot>(
+                        stream: _audioHandler.snapshots,
+                        initialData: _audioHandler.snapshot,
+                        builder: (context, snapshot) {
+                          final playing = snapshot.data?.playing ?? _playing;
+                          final hlsPhase = StreamConnectionService.phaseForHls(
+                            snapshot.data?.status ??
+                                UnderSoundPlaybackStatus.idle,
+                          );
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  'HLS • ${_phaseLabel(hlsPhase)}',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              FilledButton.icon(
+                                onPressed:
+                                    _playDisabled ? null : _togglePlayback,
+                                icon: Icon(
+                                  playing ? Icons.pause : Icons.play_arrow,
+                                ),
+                                label: Text(playing ? 'Pause' : 'Play'),
+                              ),
+                            ],
+                          );
+                        },
+                      )
+                    else
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'WebRTC • ${_phaseLabel(_webrtcSnap.phase)}',
+                              style: Theme.of(context).textTheme.bodySmall,
                             ),
-                            const SizedBox(height: 10),
-                            FilledButton.icon(
-                              onPressed: _playDisabled ? null : _togglePlayback,
+                          ),
+                          const SizedBox(height: 10),
+                          FilledButton.icon(
+                            onPressed: _playDisabled ? null : _togglePlayback,
+                            icon: Icon(
+                              _webrtcPlayIconOn
+                                  ? Icons.pause
+                                  : Icons.play_arrow,
+                            ),
+                            label: Text(
+                                _webrtcPlayIconOn ? 'Pause' : 'Play WebRTC'),
+                          ),
+                          if (_webrtcSnap.livekitRoomConnected) ...[
+                            const SizedBox(height: 8),
+                            OutlinedButton.icon(
+                              onPressed: _webrtcBusy ? null : _toggleWebRtcMute,
                               icon: Icon(
-                                playing ? Icons.pause : Icons.play_arrow,
+                                _webrtcSnap.muted
+                                    ? Icons.volume_up_rounded
+                                    : Icons.volume_off_rounded,
                               ),
-                              label: Text(playing ? 'Pause' : 'Play'),
+                              label:
+                                  Text(_webrtcSnap.muted ? 'Unmute' : 'Mute'),
                             ),
                           ],
-                        );
-                      },
-                    )
-                  else
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'WebRTC • ${_phaseLabel(_webrtcSnap.phase)}',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        FilledButton.icon(
-                          onPressed: _playDisabled ? null : _togglePlayback,
-                          icon: Icon(
-                            _webrtcPlayIconOn ? Icons.pause : Icons.play_arrow,
-                          ),
-                          label:
-                              Text(_webrtcPlayIconOn ? 'Pause' : 'Play WebRTC'),
-                        ),
-                      ],
+                        ],
+                      ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: (_checkingHls || _webrtcBusy)
+                          ? null
+                          : () async {
+                              if (_transport == StreamTransportMode.webRtc) {
+                                await _webRtcController.disconnect(
+                                  keepSession: true,
+                                );
+                                await _toggleWebRtcPlayback();
+                                return;
+                              }
+                              await _refreshHls();
+                            },
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Reconnect'),
                     ),
-                  const SizedBox(height: 8),
-                  OutlinedButton.icon(
-                    onPressed: (_checkingHls || _webrtcBusy)
-                        ? null
-                        : () async {
-                            if (_transport == StreamTransportMode.webRtc) {
-                              await _liveKit.disconnect();
-                              await _toggleWebRtcPlayback();
-                              return;
-                            }
-                            await _refreshHls();
-                          },
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Reconnect'),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            _listenerUrl,
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ],
-      ),
+            const SizedBox(height: 16),
+            Text(
+              _listenerUrl,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
       ),
     );
   }
