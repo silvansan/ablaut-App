@@ -26,6 +26,14 @@ and sends the returned `listenerSessionToken` to the listener-token endpoint (bo
 
 Legacy listener URL shapes remain supported (`/listen/...`, `/listener/...`, `/listen/{event}` for event directories, `/e/.../listen`, `undersound://`).
 
+## App updates (Android sideload)
+
+On launch, the home screen checks GitHub Releases for a newer tag than the installed app version. When an update exists, users see a banner and dialog with a **Download update** button that opens the latest `app-release.apk` URL.
+
+Release a new APK by pushing a tag such as `v0.3.1` (see `.github/workflows/android-release.yml`) or running the workflow manually. The app compares semver tags (`v0.3.1` → `0.3.1`) against `pubspec.yaml` `version`.
+
+True silent background install is not used (Play Store is not required); Android will prompt the user to install after the APK download completes.
+
 ## Getting started
 
 Install [Flutter](https://docs.flutter.dev/get-started/install), then from this directory:

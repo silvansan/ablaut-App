@@ -23,7 +23,7 @@ void main() {
     );
     expect(find.byIcon(Icons.qr_code_scanner_rounded), findsOneWidget);
     expect(find.text('My favorites'), findsOneWidget);
-    expect(find.text('Version 0.2.1'), findsOneWidget);
+    expect(find.text('Check for updates'), findsOneWidget);
     expect(find.text('GitHub repository'), findsOneWidget);
     expect(find.text('Manual link'), findsNothing);
   });
