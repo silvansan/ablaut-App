@@ -28,9 +28,14 @@ class AppUpdateInfo {
 }
 
 class AppUpdateService {
-  const AppUpdateService({http.Client? httpClient}) : _httpClient = httpClient;
+  const AppUpdateService({
+    http.Client? httpClient,
+    Duration requestTimeout = const Duration(seconds: 15),
+  })  : _httpClient = httpClient,
+        _requestTimeout = requestTimeout;
 
   final http.Client? _httpClient;
+  final Duration _requestTimeout;
 
   Future<AppUpdateInfo?> checkForUpdate() async {
     final packageInfo = await PackageInfo.fromPlatform();
@@ -43,10 +48,12 @@ class AppUpdateService {
     final ownsClient = _httpClient == null;
 
     try {
-      final response = await client.get(
-        Uri.parse(_latestReleaseApiUrl),
-        headers: const {'Accept': 'application/vnd.github+json'},
-      );
+      final response = await client
+          .get(
+            Uri.parse(_latestReleaseApiUrl),
+            headers: const {'Accept': 'application/vnd.github+json'},
+          )
+          .timeout(_requestTimeout);
 
       if (response.statusCode != 200) {
         return null;

@@ -93,7 +93,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     try {
       final link = ListenerLinkParser.parse(favorite.url);
       final channelContext = await _api.loadPublicChannel(link);
-      if (!mounted) {
+      if (!context.mounted) {
         return;
       }
       await _sessionCoordinator.changeStoredPassword(
@@ -102,12 +102,16 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         channelContext: channelContext,
         favorite: favorite,
       );
-      if (mounted) {
-        await _loadFavorites();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Listener password updated')),
-        );
+      if (!context.mounted) {
+        return;
       }
+      await _loadFavorites();
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Listener password updated')),
+      );
     } on ListenerAccessException catch (error) {
       if (mounted) {
         setState(() => _error = error.message);

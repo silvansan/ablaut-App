@@ -71,6 +71,9 @@ class ListenerChannelLauncher {
     }
 
     final channelContext = await _api.loadPublicChannel(link);
+    if (!context.mounted) {
+      return;
+    }
     _coordinator.ensureChannelAccessible(channelContext);
 
     String? listenerSessionToken;

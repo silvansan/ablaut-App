@@ -349,17 +349,19 @@ class _PlayerScreenState extends State<PlayerScreen> {
       await _connectWebRtc();
     } on ApiException catch (e) {
       if (e.statusCode == 403 &&
-          widget.channelContext.access.listenerPasswordRequired &&
-          mounted) {
+          widget.channelContext.access.listenerPasswordRequired) {
         try {
           await _favoritesService.clearListenerSession(_listenerUrl);
+          if (!context.mounted) {
+            return;
+          }
           final refreshed = await _sessionCoordinator.resolveSessionToken(
             context: context,
             link: widget.link,
             channelContext: widget.channelContext,
             persistForFavorite: true,
           );
-          if (!mounted) {
+          if (!context.mounted) {
             return;
           }
           setState(() => _listenerSessionToken = refreshed);
@@ -367,19 +369,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
           await _connectWebRtc();
           return;
         } on ListenerAccessException catch (accessError) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(accessError.message)),
-            );
+          if (!context.mounted) {
+            return;
           }
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(accessError.message)),
+          );
           return;
         }
       }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message)),
-        );
+      if (!context.mounted) {
+        return;
       }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
     } catch (error, stackTrace) {
       developer.log(
         'WebRTC did not start.',

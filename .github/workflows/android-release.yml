@@ -46,6 +46,12 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+
+      - name: Test
+        run: flutter test
+
       - name: Build release APK
         run: flutter build apk --release
 
@@ -66,3 +72,15 @@ jobs:
           files: app/build/app/outputs/flutter-apk/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Refresh studio mobile app footer metadata
+        env:
+          STUDIO_MOBILE_APP_SYNC_URL: ${{ secrets.STUDIO_MOBILE_APP_SYNC_URL }}
+          STUDIO_MOBILE_APP_SYNC_TOKEN: ${{ secrets.STUDIO_MOBILE_APP_SYNC_TOKEN }}
+        run: |
+          if [ -z "$STUDIO_MOBILE_APP_SYNC_URL" ] || [ -z "$STUDIO_MOBILE_APP_SYNC_TOKEN" ]; then
+            echo "Skipping studio mobile app sync; STUDIO_MOBILE_APP_SYNC_URL or STUDIO_MOBILE_APP_SYNC_TOKEN is not configured."
+            exit 0
+          fi
+          curl -fsS -X POST "$STUDIO_MOBILE_APP_SYNC_URL" \
+            -H "Authorization: Bearer $STUDIO_MOBILE_APP_SYNC_TOKEN"

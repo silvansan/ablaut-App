@@ -87,6 +87,10 @@ class ListenerSessionCoordinator {
       return null;
     }
 
+    if (!context.mounted) {
+      return null;
+    }
+
     var password = await showListenerPasswordDialog(context);
     if (!context.mounted) {
       return null;

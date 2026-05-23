@@ -1,0 +1,43 @@
+{
+  "access": {
+    "listenerTokenMode": "public",
+    "listenerPasswordRequired": false,
+    "listenerPasswordConfigured": true,
+    "listenerPasswordMissing": false,
+    "listenerUnavailable": false,
+    "verifyPasswordEndpoint": "/api/listener/verify-password"
+  },
+  "event": {
+    "title": "Contract Test Event",
+    "slug": "contract-event",
+    "status": "active",
+    "defaultLanguage": "en",
+    "publicListenerEnabled": true,
+    "listenerPasswordEnabled": false,
+    "speakerPasswordEnabled": false
+  },
+  "channel": {
+    "name": "English",
+    "slug": "en",
+    "description": "Primary channel",
+    "languageCode": "en",
+    "languageLabel": "English",
+    "enabled": true,
+    "listenerPageEnabled": true,
+    "speakerPageEnabled": true,
+    "listenerTokenMode": "public",
+    "speakerPasswordEnabled": false,
+    "webrtcEnabled": true,
+    "hlsEnabled": true,
+    "hlsUrl": "https://voice.example.com/hls/contract-event/en/live.m3u8",
+    "icecastFallbackUrl": null,
+    "recommendedTransport": "webrtc",
+    "transportStatus": "live"
+  },
+  "livekit": {
+    "roomName": "ablaut_contract-event_en",
+    "tokenEndpoint": "/api/livekit/listener-token",
+    "url": "wss://livekit.example.com"
+  },
+  "logoUrl": ""
+}

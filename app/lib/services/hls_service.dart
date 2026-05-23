@@ -12,12 +12,12 @@ class HlsService {
 
   final AblautApiClient api;
 
-  /// Resolves the server-provided Icecast fallback stream, when present.
+  /// Resolves the server-provided LL-HLS egress URL or Icecast fallback stream.
   Future<Uri?> resolvePlayableUrl({
     required Uri serverUrl,
     required PublicChannel channel,
   }) async {
-    return _fallbackUrl(serverUrl: serverUrl, channel: channel);
+    return _resolvePlayableUrl(serverUrl: serverUrl, channel: channel);
   }
 
   /// Human-facing status plus optional fallback URL.
@@ -25,7 +25,7 @@ class HlsService {
     required Uri serverUrl,
     required PublicChannel channel,
   }) async {
-    final playable = _fallbackUrl(serverUrl: serverUrl, channel: channel);
+    final playable = _resolvePlayableUrl(serverUrl: serverUrl, channel: channel);
     if (playable == null) {
       return (
         playableUrl: null,
@@ -34,9 +34,12 @@ class HlsService {
       );
     }
 
+    final usesStudioEgress = channel.hlsEnabled && channel.hlsUrl != null;
     return (
       playableUrl: playable,
-      statusSummary: 'Fallback stream is available'
+      statusSummary: usesStudioEgress
+          ? 'LL-HLS stream is available'
+          : 'Fallback stream is available',
     );
   }
 
@@ -44,7 +47,7 @@ class HlsService {
     required Uri serverUrl,
     required PublicChannel channel,
   }) {
-    final playable = _fallbackUrl(serverUrl: serverUrl, channel: channel);
+    final playable = _resolvePlayableUrl(serverUrl: serverUrl, channel: channel);
     return Future.value(
       HlsStatus(
         active: playable != null,
@@ -55,6 +58,22 @@ class HlsService {
             : null,
       ),
     );
+  }
+
+  Uri? _resolvePlayableUrl({
+    required Uri serverUrl,
+    required PublicChannel channel,
+  }) {
+    if (channel.hlsEnabled) {
+      final studioUrl = channel.hlsUrl;
+      if (studioUrl != null) {
+        return studioUrl.hasScheme
+            ? studioUrl
+            : serverUrl.resolveUri(studioUrl);
+      }
+    }
+
+    return _fallbackUrl(serverUrl: serverUrl, channel: channel);
   }
 
   Uri? _fallbackUrl({

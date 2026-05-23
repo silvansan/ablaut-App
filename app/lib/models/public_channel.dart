@@ -36,8 +36,11 @@ class PublicChannel {
     required this.languageLabel,
     required this.webrtcEnabled,
     required this.hlsEnabled,
+    required this.hlsUrl,
     required this.icecastFallbackUrl,
     required this.listenerTokenMode,
+    this.recommendedTransport,
+    this.transportStatus,
   });
 
   final String id;
@@ -47,10 +50,19 @@ class PublicChannel {
   final String languageLabel;
   final bool webrtcEnabled;
   final bool hlsEnabled;
+  final Uri? hlsUrl;
   final String icecastFallbackUrl;
   final String listenerTokenMode;
+  final String? recommendedTransport;
+  final String? transportStatus;
 
   factory PublicChannel.fromJson(Map<String, dynamic> json) {
+    final rawHlsUrl = json['hlsUrl']?.toString();
+    Uri? parsedHlsUrl;
+    if (rawHlsUrl != null && rawHlsUrl.isNotEmpty) {
+      parsedHlsUrl = Uri.tryParse(rawHlsUrl);
+    }
+
     return PublicChannel(
       id: (json['id'] ?? json['slug'] ?? '').toString(),
       name: (json['name'] ?? json['languageLabel'] ?? 'Audio').toString(),
@@ -59,8 +71,11 @@ class PublicChannel {
       languageLabel: json['languageLabel']?.toString() ?? '',
       webrtcEnabled: json['webrtcEnabled'] != false,
       hlsEnabled: json['hlsEnabled'] == true,
+      hlsUrl: parsedHlsUrl,
       icecastFallbackUrl: json['icecastFallbackUrl']?.toString() ?? '',
       listenerTokenMode: json['listenerTokenMode']?.toString() ?? '',
+      recommendedTransport: json['recommendedTransport']?.toString(),
+      transportStatus: json['transportStatus']?.toString(),
     );
   }
 }

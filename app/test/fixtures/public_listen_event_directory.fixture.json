@@ -1,0 +1,28 @@
+{
+  "access": {
+    "listenerPasswordConfigured": false,
+    "listenerPasswordMissing": false,
+    "listenerPasswordRequired": false,
+    "verifyPasswordEndpoint": "/api/listener/verify-password"
+  },
+  "channels": [
+    {
+      "name": "English",
+      "slug": "en",
+      "languageCode": "en",
+      "languageLabel": "English",
+      "listenerTokenMode": "public",
+      "listenerUrl": "https://voice.example.com/listen/contract-event/en",
+      "webrtcEnabled": true
+    }
+  ],
+  "event": {
+    "slug": "contract-event",
+    "title": "Contract Test Event",
+    "status": "active",
+    "defaultLanguage": "en",
+    "publicListenerEnabled": true,
+    "listenerPasswordEnabled": false,
+    "unifiedListenerQrEnabled": true
+  }
+}

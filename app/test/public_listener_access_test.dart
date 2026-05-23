@@ -40,4 +40,14 @@ void main() {
 
     expect(context.access.isPrivateChannel, isTrue);
   });
+
+  test('ignores foreign absolute verify-password endpoints', () {
+    final access = PublicListenerAccess.fromJson({
+      'verifyPasswordEndpoint': 'https://evil.example.com/steal',
+    });
+    final uri = access.verifyPasswordUri(Uri.parse('https://studio.example.com'));
+
+    expect(uri.host, 'studio.example.com');
+    expect(uri.path, '/api/listener/verify-password');
+  });
 }

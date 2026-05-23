@@ -4,7 +4,7 @@ Flutter listener client for [ablaut server](https://github.com/silvansan/ablaut-
 
 ## Playback
 
-On the player screen, **WebRTC (LiveKit)** is the default for the lowest latency while a LiveKit session is active. Switch to **HLS** for buffered HTTP playback via **audio_service** and **just_audio** when the server exposes HLS egress.
+On the player screen, **WebRTC (LiveKit)** is the default for the lowest latency while a LiveKit session is active. Switch to **HLS** for buffered HTTP playback via **audio_service** and **just_audio** when the server exposes LL-HLS egress (`channel.hlsUrl`) or an Icecast fallback URL.
 
 LiveKit credentials come from **`POST /api/livekit/listener-token`**. The response may use `url`, `livekitUrl`, or `websocketUrl` for the signaling endpoint; this client accepts whichever field the server returns.
 
@@ -25,6 +25,24 @@ The response includes an `access` block. When `listenerPasswordRequired` is true
 and sends the returned `listenerSessionToken` to the listener-token endpoint (body field and/or `X-Ablaut-Listener-Session` header).
 
 Legacy listener URL shapes remain supported (`/listen/...`, `/listener/...`, `/listen/{event}` for event directories, `/e/.../listen`, `undersound://`).
+
+### LAN HTTP listener links
+
+Studio deployments often use plain `http://192.168.x.x:3000/listen/...` QR codes on event Wi‑Fi.
+
+| Platform | Behavior |
+|----------|----------|
+| Android | Cleartext HTTP is allowed via `android/app/src/main/res/xml/network_security_config.xml`. Prefer HTTPS in production. |
+| iOS | `NSAllowsLocalNetworking` is enabled in `ios/Runner/Info.plist` for local-network HTTP. Prefer HTTPS in production. |
+
+### Deep links
+
+| Platform | Scheme |
+|----------|--------|
+| iOS | `undersound://` registered in `Info.plist` |
+| Android | `undersound://` intent filter in `AndroidManifest.xml` |
+
+Paste a listener URL manually or scan a QR code if the deep link is not routed automatically on your device.
 
 ## App updates (Android sideload)
 

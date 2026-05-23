@@ -46,9 +46,16 @@ class PublicListenerAccess {
       listenerUnavailable || listenerTokenMode == 'private';
 
   Uri verifyPasswordUri(Uri serverOrigin) {
-    final endpoint = verifyPasswordEndpoint;
+    final endpoint = verifyPasswordEndpoint.trim();
     if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
-      return Uri.parse(endpoint);
+      final absolute = Uri.parse(endpoint);
+      if (absolute.host != serverOrigin.host ||
+          absolute.scheme != serverOrigin.scheme ||
+          (absolute.hasPort ? absolute.port : null) !=
+              (serverOrigin.hasPort ? serverOrigin.port : null)) {
+        return serverOrigin.replace(path: '/api/listener/verify-password');
+      }
+      return absolute;
     }
     final path = endpoint.startsWith('/') ? endpoint : '/$endpoint';
     return serverOrigin.replace(path: path);

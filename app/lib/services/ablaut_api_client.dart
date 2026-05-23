@@ -10,10 +10,13 @@ import '../models/public_listener_access.dart';
 import 'listener_access_messages.dart';
 
 class AblautApiClient {
-  const AblautApiClient({http.Client? httpClient})
-      : _httpClient = httpClient;
+  const AblautApiClient({
+    http.Client? httpClient,
+    this.requestTimeout = const Duration(seconds: 30),
+  }) : _httpClient = httpClient;
 
   final http.Client? _httpClient;
+  final Duration requestTimeout;
 
   Future<PublicChannelContext> loadPublicChannel(ListenerLink link) async {
     final channelSlug = link.channelSlug;
@@ -152,7 +155,13 @@ class AblautApiClient {
 
   Future<http.Response> _get(Uri uri) {
     final client = _httpClient;
-    return client == null ? http.get(uri) : client.get(uri);
+    final request = client == null ? http.get(uri) : client.get(uri);
+    return request.timeout(
+      requestTimeout,
+      onTimeout: () {
+        throw const ApiException('The server took too long to respond.');
+      },
+    );
   }
 
   Future<http.Response> _postJson(
@@ -166,9 +175,15 @@ class AblautApiClient {
       'Content-Type': 'application/json',
       ...?headers,
     };
-    return client == null
+    final request = client == null
         ? http.post(uri, headers: requestHeaders, body: encoded)
         : client.post(uri, headers: requestHeaders, body: encoded);
+    return request.timeout(
+      requestTimeout,
+      onTimeout: () {
+        throw const ApiException('The server took too long to respond.');
+      },
+    );
   }
 
   Map<String, dynamic> _decode(http.Response response) {
