@@ -22,10 +22,36 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>ablaut.legacy.undersound</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>undersound</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Scan ablaut listener QR codes.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>ablaut needs the microphone so translators and speakers can publish live audio on a channel.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Choose a photo that contains an ablaut listener QR code.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -55,36 +81,10 @@
 	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
-	<key>NSCameraUsageDescription</key>
-	<string>Scan ablaut listener QR codes.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Choose a photo that contains an ablaut listener QR code.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>ablaut needs the microphone so translators and speakers can publish live audio on a channel.</string>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsLocalNetworking</key>
-		<true/>
-	</dict>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLName</key>
-			<string>ablaut.legacy.undersound</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>undersound</string>
-			</array>
-		</dict>
-	</array>
-	<key>UIRequiresFullScreen</key>
-	<false/>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+	<key>UIRequiresFullScreen</key>
+	<false/>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

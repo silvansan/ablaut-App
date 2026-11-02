@@ -62,3 +62,10 @@ android {
 flutter {
     source = "../.."
 }
+
+// google-services.json is not committed. Apply the Firebase plugins only when
+// it is present so CI and fresh clones still build (without Firebase).
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+    apply(plugin = "com.google.firebase.crashlytics")
+}

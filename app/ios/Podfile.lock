@@ -1,0 +1,37 @@
+PODS:
+  - Flutter (1.0.0)
+  - flutter_webrtc (1.4.0):
+    - Flutter
+    - WebRTC-SDK (= 144.7559.01)
+  - livekit_client (2.8.1):
+    - Flutter
+    - flutter_webrtc
+    - WebRTC-SDK (= 144.7559.01)
+  - WebRTC-SDK (144.7559.01)
+
+DEPENDENCIES:
+  - Flutter (from `Flutter`)
+  - flutter_webrtc (from `.symlinks/plugins/flutter_webrtc/ios`)
+  - livekit_client (from `.symlinks/plugins/livekit_client/ios`)
+
+SPEC REPOS:
+  trunk:
+    - WebRTC-SDK
+
+EXTERNAL SOURCES:
+  Flutter:
+    :path: Flutter
+  flutter_webrtc:
+    :path: ".symlinks/plugins/flutter_webrtc/ios"
+  livekit_client:
+    :path: ".symlinks/plugins/livekit_client/ios"
+
+SPEC CHECKSUMS:
+  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  flutter_webrtc: ec91d94b484ad49cf191ef93413f64a40ffd3b4c
+  livekit_client: a28e738fa0d6b16d780631bfe7a4ea76a9be382d
+  WebRTC-SDK: ab9b5319e458c2bfebdc92b3600740da35d5630d
+
+PODFILE CHECKSUM: 011841dcde5468fa3c674972ef230ba144cc5cdd
+
+COCOAPODS: 1.17.0
