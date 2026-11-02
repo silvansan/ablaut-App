@@ -45,6 +45,8 @@ class ListenerChannelLauncher {
     if (link.isEventDirectory) {
       final screen = EventChannelsScreen(
         link: link,
+        favorite: favorite,
+        addToFavorites: addToFavorites,
         replaceCurrentRoute: replaceCurrentRoute,
       );
       final route = MaterialPageRoute(builder: (_) => screen);

@@ -25,6 +25,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: 3.44.6
           cache: true
 
       - name: Configure release signing
@@ -64,12 +65,23 @@ jobs:
             echo "name=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           fi
 
+      # Versioned copy for people browsing releases (v0.3.4 -> ablaut-app-v0-3-4.apk).
+      # app-release.apk stays: installed apps and the studio download that exact name.
+      - name: Name versioned APK
+        id: apk
+        run: |
+          versioned="ablaut-app-$(echo '${{ steps.tag.outputs.name }}' | tr '.' '-').apk"
+          cp build/app/outputs/flutter-apk/app-release.apk "build/app/outputs/flutter-apk/$versioned"
+          echo "versioned=$versioned" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.name }}
           generate_release_notes: true
-          files: app/build/app/outputs/flutter-apk/app-release.apk
+          files: |
+            app/build/app/outputs/flutter-apk/app-release.apk
+            app/build/app/outputs/flutter-apk/${{ steps.apk.outputs.versioned }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

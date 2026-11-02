@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/favorite_channel.dart';
+import '../models/listener_link.dart';
+import 'listener_link_parser.dart';
 import 'listener_secure_store.dart';
 
 class FavoritesService {
@@ -51,6 +53,26 @@ class FavoritesService {
 
   Future<bool> isSavedUrl(String url) async {
     return (await findByUrl(url)) != null;
+  }
+
+  /// Finds the favorite for the same server, event, channel and role, however its
+  /// URL was written (legacy `/e/...` links, query strings).
+  Future<FavoriteChannel?> findByLink(ListenerLink link) async {
+    for (final favorite in await loadFavorites()) {
+      final ListenerLink saved;
+      try {
+        saved = ListenerLinkParser.parse(favorite.url);
+      } on FormatException {
+        continue;
+      }
+      if (saved.serverUrl == link.serverUrl &&
+          saved.eventSlug == link.eventSlug &&
+          (saved.channelSlug ?? '') == (link.channelSlug ?? '') &&
+          saved.role == link.role) {
+        return favorite;
+      }
+    }
+    return null;
   }
 
   Future<FavoriteChannel> addFavorite({

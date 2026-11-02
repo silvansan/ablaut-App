@@ -1,5 +1,5 @@
-# Local Flutter SDK checkout. Keep app code outside this directory.
-flutter/
+# Local Flutter SDK checkout at the repo root. Anchored, so app/ios/Flutter/ is not ignored.
+/flutter/
 
 # Flutter/Dart generated files for future app work.
 .dart_tool/
